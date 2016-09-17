@@ -72,7 +72,7 @@ named!(type_and_value<Value>,
                    endl,
                    || Value::Token(type_tag, value))));
 
-named!(key_value<Attr>,
+named!(pub attribute<Attr>,
        chain!(leading_junk ~
               space? ~
               key: token ~
@@ -90,12 +90,6 @@ named!(pub begindata<()>,
               endl,
               || ()));
 
-named!(pub next_attr<Option<Attr> >,
-       chain!(many0!(endl) ~
-              space? ~
-              kv: key_value?,
-              || kv));
-
 pub type Token = String;
 pub type Type = Token;
 pub type Attr = (Token, Value);
@@ -110,8 +104,7 @@ pub enum Value {
 #[cfg(test)]
 mod tests {
     use super::{comment, endl, token, quad_digit, octal_digit, hex_digit, octal_esc, hex_esc,
-                quoted_string, multiline_octal, type_and_value, key_value, begindata, next_attr,
-                Value};
+                quoted_string, multiline_octal, type_and_value, attribute, Value};
     use nom::IResult::*;
     use nom::{Needed, ErrorKind, Err};
 
@@ -292,7 +285,7 @@ mod tests {
     }
 
     #[test]
-    fn test_token_str() {
+    fn test_string_value() {
         assert_eq!(type_and_value(b"UTF8 \"0\"\n"),
                    Done(&b""[..], Value::String("0".to_owned())));
         assert_eq!(type_and_value(b"UTF8 \"Bogus Mozilla Addons\"\n"),
@@ -305,5 +298,33 @@ mod tests {
         assert_eq!(type_and_value(b"UTF8   "), Incomplete(Needed::Size("UTF8   ".len() + 1)));
         assert_eq!(type_and_value(b"UTF8 \""), Incomplete(Needed::Size("UTF8 \"".len() + 1)));
         assert_eq!(type_and_value(b"UTF8 \"x\""), Incomplete(Needed::Size("UTF8 \"x\"".len() + 1)));
+    }
+
+    #[test]
+    fn test_octal_value() {
+        assert_eq!(type_and_value(b"MULTILINE_OCTAL\n\
+                                    \\000\\001\\002\n\
+                                    \\010\\011\\012\n\
+                                    END\n"),
+                   Done(&b""[..], Value::Binary(vec![0, 1, 2, 8, 9, 10])))
+
+        // TODO: more cases?
+    }
+
+    #[test]
+    fn test_attr() {
+        assert_eq!(attribute(b"# This is a thing.\n\
+                               CKA_CLASS CK_OBJECT_CLASS CKO_CERTIFICATE\n"),
+                   Done(&b""[..], ("CKA_CLASS".to_owned(),
+                                   Value::Token("CK_OBJECT_CLASS".to_owned(),
+                                                "CKO_CERTIFICATE".to_owned()))));
+
+        assert_eq!(attribute(b"CKA_SERIAL_NUMBER MULTILINE_OCTAL\n\
+                               \\002\\004\\011\\023\\310\\251\n\
+                               END\n"),
+                   Done(&b""[..], ("CKA_SERIAL_NUMBER".to_owned(),
+                                   Value::Binary(vec![0x02, 4, 0x9, 0x13, 0xc8, 0xa9]))));
+
+        // TODO: more cases?
     }
 }

@@ -1,10 +1,4 @@
-use std::string::FromUtf8Error;
-
-use nom::{space, not_line_ending, alphanumeric};
-
-fn to_owned_string(bv: &[u8]) -> Result<String, FromUtf8Error> {
-    String::from_utf8(bv.to_owned())
-}
+use nom::{space, not_line_ending, alphanumeric, ErrorKind};
 
 named!(comment<()>,
        chain!(tag!("#") ~
@@ -18,8 +12,9 @@ named!(endl<()>,
               char!('\n'),
               || ()));
 
-named!(token,
-       recognize!(many1!(alt!(alphanumeric | tag!("_")))));
+named!(token<Token>,
+       map_res!(recognize!(many1!(alt!(alphanumeric | tag!("_")))),
+                |bv: &[_]| String::from_utf8(bv.to_owned())));
 
 named!(hex_digit<u8>,
        map!(one_of!(b"0123456789abcdefABCDEF"), |b| match b {
@@ -37,7 +32,7 @@ named!(octal_esc<u8>,
               b: octal_digit ~
               c: octal_digit,
               || { a << 6 | b << 3 | c }));
-       
+
 named!(hex_esc<u8>,
        chain!(tag!("\\x") ~
               a: hex_digit ~
@@ -50,41 +45,46 @@ named!(quoted_string<String>,
                                        Vec::new(), |mut a: Vec<_>, b| { a.push(b); a }),
                            String::from_utf8),
                   tag!("\"")));
-                  
+
 named!(multiline_octal<Vec<u8> >,
-       fold_many0!(chain!(endl? ~ space? ~ o: octal_esc, || o),
+       fold_many0!(chain!(leading_junk ~ space? ~ o: octal_esc, || o),
                    Vec::new(), |mut a: Vec<_>, b| { a.push(b); a }));
 
 named!(type_and_value<Value>,
-       alt!(chain!(tag!("MULTILINE_OCTAL") ~
-                   endl ~
-                   bits: multiline_octal ~
-                   tag!("END") ~
-                   endl, 
-                   || Value::Binary(bits))
-            |
-            chain!(type_tag: map_res!(alt!(tag!("ASCII") | tag!("UTF8")), to_owned_string) ~
+       alt!(preceded!(tag!("MULTILINE_OCTAL"),
+                      error!(ErrorKind::Alt,
+                             chain!(endl ~
+                                    bits: multiline_octal ~
+                                    endl ~
+                                    tag!("END") ~
+                                    endl,
+                                    || Value::Binary(bits)))) |
+            preceded!(tag!("UTF8"),
+                      // ASCII7 is also attested but not actually used in certdata.txt
+                      error!(ErrorKind::Alt,
+                             chain!(space ~
+                                    value: quoted_string ~
+                                    endl,
+                                    || Value::String(value)))) |
+            chain!(type_tag: token ~
                    space ~
-                   value: quoted_string ~
-                   endl,
-                   || Value::String(type_tag, value))
-            |
-            chain!(type_tag: map_res!(token, to_owned_string) ~
-                   space ~
-                   value: map_res!(token, to_owned_string) ~
+                   value: token ~
                    endl,
                    || Value::Token(type_tag, value))));
 
 named!(key_value<Attr>,
-       chain!(many0!(endl) ~
+       chain!(leading_junk ~
               space? ~
-              key: map_res!(token, to_owned_string) ~
+              key: token ~
               space? ~
               value: type_and_value,
               || (key, value)));
 
+named!(pub leading_junk<()>,
+       value!((), many0!(endl)));
+
 named!(pub begindata<()>,
-       chain!(many0!(endl) ~
+       chain!(leading_junk ~
               space? ~
               tag!("BEGINDATA") ~
               endl,
@@ -100,16 +100,18 @@ pub type Token = String;
 pub type Type = Token;
 pub type Attr = (Token, Value);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Value {
     Token(Type, Token),
-    String(Type, String),
+    String(String),
     Binary(Vec<u8>), // Type is always MULTILINE_OCTAL
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{comment, endl, token, quad_digit, octal_digit, hex_digit, octal_esc, hex_esc};
+    use super::{comment, endl, token, quad_digit, octal_digit, hex_digit, octal_esc, hex_esc,
+                quoted_string, multiline_octal, type_and_value, key_value, begindata, next_attr,
+                Value};
     use nom::IResult::*;
     use nom::{Needed, ErrorKind, Err};
 
@@ -138,15 +140,15 @@ mod tests {
         assert_eq!(endl(b"   # bees \n"), Done(&b""[..], ()));
         assert_eq!(endl(b"    bees \n"), Error(Err::Position(ErrorKind::Char, &b"bees \n"[..])));
         assert_eq!(endl(b"# bees"), Incomplete(Needed::Size("# bees".len() + 1)));
-    } 
+    }
 
     #[test]
     fn test_token() {
-        assert_eq!(token(b"CK_TRUE"), Done(&b""[..], &b"CK_TRUE"[..]));
-        assert_eq!(token(b"UTF8"), Done(&b""[..], &b"UTF8"[..]));
-        assert_eq!(token(b"CKA_CERT_MD5_HASH"), Done(&b""[..], &b"CKA_CERT_MD5_HASH"[..]));
-        assert_eq!(token(b"UTF8 "), Done(&b" "[..], &b"UTF8"[..]));
-        assert_eq!(token(b"UTF8\n"), Done(&b"\n"[..], &b"UTF8"[..]));
+        assert_eq!(token(b"CK_TRUE"), Done(&b""[..], "CK_TRUE".to_owned()));
+        assert_eq!(token(b"UTF8"), Done(&b""[..], "UTF8".to_owned()));
+        assert_eq!(token(b"CKA_CERT_MD5_HASH"), Done(&b""[..], "CKA_CERT_MD5_HASH".to_owned()));
+        assert_eq!(token(b"UTF8 "), Done(&b" "[..], "UTF8".to_owned()));
+        assert_eq!(token(b"UTF8\n"), Done(&b"\n"[..], "UTF8".to_owned()));
         assert_eq!(token(b" UTF8"), Error(Err::Position(ErrorKind::Many1, &b" UTF8"[..])));
         assert_eq!(token(b"\"UTF8\""), Error(Err::Position(ErrorKind::Many1, &b"\"UTF8\""[..])));
         assert_eq!(token(b"\\x41"), Error(Err::Position(ErrorKind::Many1, &b"\\x41"[..])));
@@ -217,5 +219,91 @@ mod tests {
         assert_eq!(hex_esc(b"0x41"), Error(Err::Position(ErrorKind::Tag, &b"0x41"[..])));
         assert_eq!(hex_esc(b"\\000"), Error(Err::Position(ErrorKind::Tag, &b"\\000"[..])));
         assert_eq!(hex_esc(b"\\x0g"), Error(Err::Position(ErrorKind::OneOf, &b"g"[..])));
+    }
+
+    #[test]
+    fn test_quoted_string() {
+        assert_eq!(quoted_string(b"\"Stuff\""), Done(&b""[..], "Stuff".to_owned()));
+        assert_eq!(quoted_string("\"Stũff\"".as_bytes()), Done(&b""[..], "Stũff".to_owned()));
+        assert_eq!(quoted_string(b"\"a\"\"b\""), Done(&b"\"b\""[..], "a".to_owned()));
+
+        assert_eq!(quoted_string(b"\"A\\x42\""), Done(&b""[..], "AB".to_owned()));
+
+        assert_eq!(quoted_string(b"UTF8"), Error(Err::Position(ErrorKind::Tag, &b"UTF8"[..])));
+
+        assert_eq!(quoted_string(b"\"A\\x82\""),
+                   Error(Err::Position(ErrorKind::MapRes, &b"A\\x82\""[..])));
+        assert_eq!(quoted_string(b"\"A\\xce\""),
+                   Error(Err::Position(ErrorKind::MapRes, &b"A\\xce\""[..])));
+        assert_eq!(quoted_string(b"\"A\\xce\\xbb\""),
+                   Done(&b""[..], "Aλ".to_owned()));
+
+        assert_eq!(quoted_string(b"\"A\\\\B\""),
+                   Error(Err::Position(ErrorKind::Tag, &b"\\\\B\""[..])));
+        assert_eq!(quoted_string(b"\"A\\\"B\""),
+                   Error(Err::Position(ErrorKind::Tag, &b"\\\"B\""[..])));
+        assert_eq!(quoted_string(b"\"A\\102\""),
+                   Error(Err::Position(ErrorKind::Tag, &b"\\102\""[..])));
+
+        assert_eq!(quoted_string(b"\"AC Ra\\xC3\\xADz\""),
+                   Done(&b""[..], "AC Raíz".to_owned()));
+        assert_eq!(quoted_string("\"Főtanúsítvány\"".as_bytes()),
+                   Done(&b""[..], "Főtanúsítvány".to_owned()));
+    }
+
+    #[test]
+    fn test_multiline_octal() {
+        assert_eq!(multiline_octal(b"\\101"), Done(&b""[..], vec![65]));
+        assert_eq!(multiline_octal(b"\\101\\033"), Done(&b""[..], vec![65, 27]));
+        assert_eq!(multiline_octal(b"\\101\n\\033"), Done(&b""[..], vec![65, 27]));
+        assert_eq!(multiline_octal(b"\\101\\033\n"),
+                   Incomplete(Needed::Size("\\101\\033\n".len() + 1)));
+        assert_eq!(multiline_octal(b"\n\\101\\033"), Done(&b""[..], vec![65, 27]));
+        assert_eq!(multiline_octal(b"\\101\n\n\n\n\n\n\\033"), Done(&b""[..], vec![65, 27]));
+        assert_eq!(multiline_octal(b"\\101\r\n\r\n\r\n\\033"), Done(&b""[..], vec![65, 27]));
+        assert_eq!(multiline_octal(b"\\101 \\033"), Done(&b""[..], vec![65, 27]));
+        assert_eq!(multiline_octal(b"\\101 # Sixty-five \n\t\\033"), Done(&b""[..], vec![65, 27]));
+        assert_eq!(multiline_octal(b"\\101\\033\nEND"), Done(&b"\nEND"[..], vec![65, 27]));
+        assert_eq!(multiline_octal(b"\\101\\033\n   END"), Done(&b"\n   END"[..], vec![65, 27]));
+    }
+
+    #[test]
+    fn test_token_value() {
+        assert_eq!(type_and_value(b"CK_BBOOL CK_TRUE\n"),
+                   Done(&b""[..], Value::Token("CK_BBOOL".to_owned(), "CK_TRUE".to_owned())));
+        assert_eq!(type_and_value(b"CK_BBOOL   \t   CK_TRUE\n"),
+                   Done(&b""[..], Value::Token("CK_BBOOL".to_owned(), "CK_TRUE".to_owned())));
+        assert_eq!(type_and_value(b"CK_BBOOL CK_TRUE\n\n"),
+                   Done(&b"\n"[..], Value::Token("CK_BBOOL".to_owned(), "CK_TRUE".to_owned())));
+        assert_eq!(type_and_value(b"CK_BBOOL CK_TRUE \n "),
+                   Done(&b" "[..], Value::Token("CK_BBOOL".to_owned(), "CK_TRUE".to_owned())));
+        assert_eq!(type_and_value(b"CK_BBOOL CK_TRUE # Very true. Wow. \n"),
+                   Done(&b""[..], Value::Token("CK_BBOOL".to_owned(), "CK_TRUE".to_owned())));
+        assert_eq!(type_and_value(b"CK_BBOOL CK_TRUE"),
+                   Incomplete(Needed::Size("CK_BBOOL CK_TRUE".len() + 1)));
+        assert!(type_and_value(b"CK_BBOOL\nCK_TRUE\n").is_err());
+
+        let bad_rhs = |ek: ErrorKind| {
+            let inner = Box::new(Err::Position(ek, &b"CK_TRUE\n"[..]));
+            Error(Err::NodePosition(ErrorKind::Alt, &b" CK_TRUE\n"[..], inner))
+        };
+        assert_eq!(type_and_value(b"UTF8 CK_TRUE\n"), bad_rhs(ErrorKind::Tag));
+        assert_eq!(type_and_value(b"MULTILINE_OCTAL CK_TRUE\n"), bad_rhs(ErrorKind::Char));
+    }
+
+    #[test]
+    fn test_token_str() {
+        assert_eq!(type_and_value(b"UTF8 \"0\"\n"),
+                   Done(&b""[..], Value::String("0".to_owned())));
+        assert_eq!(type_and_value(b"UTF8 \"Bogus Mozilla Addons\"\n"),
+                   Done(&b""[..], Value::String("Bogus Mozilla Addons".to_owned())));
+
+        assert!(type_and_value(b"UTF8\n\"0\"\n").is_err());
+        assert!(type_and_value(b"CK_OBJECT_CLASS \"0\"\n").is_err());
+        assert!(type_and_value(b"MULTILINE_OCTAL \"0\"\n").is_err());
+
+        assert_eq!(type_and_value(b"UTF8   "), Incomplete(Needed::Size("UTF8   ".len() + 1)));
+        assert_eq!(type_and_value(b"UTF8 \""), Incomplete(Needed::Size("UTF8 \"".len() + 1)));
+        assert_eq!(type_and_value(b"UTF8 \"x\""), Incomplete(Needed::Size("UTF8 \"x\"".len() + 1)));
     }
 }

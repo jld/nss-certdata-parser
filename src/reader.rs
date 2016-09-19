@@ -1,9 +1,11 @@
-use syntax;
+use syntax::{Token, Value, Attr, attribute, begindata};
 
 use nom::{slice_to_offsets, Err, IResult};
+use std::collections::HashMap;
 use std::convert::From;
 use std::io;
 use std::io::BufRead;
+use std::mem;
 
 pub type Offset = u64;
 
@@ -123,13 +125,13 @@ impl<I: BufRead> AttrIter<I> {
     }
 }
 impl<I: BufRead> Iterator for AttrIter<I> {
-    type Item = Result<syntax::Attr, Error>;
+    type Item = Result<Attr, Error>;
     fn next(&mut self) -> Option<Self::Item> {
         if self.had_error {
             return None;
         }
         if self.offset == 0 {
-            match apply_nom(syntax::begindata, self.offset, &mut self.src) {
+            match apply_nom(begindata, self.offset, &mut self.src) {
                 Err(err) => {
                     self.had_error = true;
                     return Some(Err(err));
@@ -143,7 +145,7 @@ impl<I: BufRead> Iterator for AttrIter<I> {
                 }
             }
         }
-        match apply_nom(syntax::attribute, self.offset, &mut self.src) {
+        match apply_nom(attribute, self.offset, &mut self.src) {
             Err(err) => {
                 self.had_error = true;
                 Some(Err(err))
@@ -153,6 +155,59 @@ impl<I: BufRead> Iterator for AttrIter<I> {
                 assert!(offset > self.offset);
                 self.offset = offset;
                 Some(Ok(attr))
+            }
+        }
+    }
+}
+
+pub type Object = HashMap<Token, Value>;
+
+pub struct ObjectIter<I: BufRead> {
+    inner: AttrIter<I>,
+    acc: Object,
+    done: bool,
+}
+
+impl<I: BufRead> ObjectIter<I> {
+    pub fn new(src: I) -> Self {
+        ObjectIter {
+            inner: AttrIter::new(src),
+            acc: HashMap::new(),
+            done: false,
+        }
+    }
+}
+
+impl<I: BufRead> Iterator for ObjectIter<I> {
+    type Item = Result<Object, Error>;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.done {
+            return None;
+        }
+        loop {
+            assert!(!self.done);
+            match self.inner.next() {
+                Some(Err(err)) => {
+                    self.done = true;
+                    return Some(Err(err))
+                }
+                Some(Ok((key, value))) => {
+                    if key == "CKA_CLASS" && !self.acc.is_empty() {
+                        let mut next_obj = HashMap::new();
+                        next_obj.insert(key, value);
+                        return Some(Ok(mem::replace(&mut self.acc, next_obj)))
+                    } else {
+                        self.acc.insert(key, value);
+                    }
+                },
+                None => {
+                    self.done = true;
+                    if !self.acc.is_empty() {
+                        return Some(Ok(mem::replace(&mut self.acc, HashMap::new())));
+                    } else {
+                        return None;
+                    }
+                }
             }
         }
     }

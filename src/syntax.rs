@@ -41,14 +41,12 @@ named!(hex_esc<u8>,
 
 named!(quoted_string<String>,
        delimited!(tag!("\""),
-                  map_res!(fold_many0!(alt!(map!(none_of!("\\\""), |b| b as u8) | hex_esc),
-                                       Vec::new(), |mut a: Vec<_>, b| { a.push(b); a }),
+                  map_res!(many0!(alt!(map!(none_of!("\\\""), |b| b as u8) | hex_esc)),
                            String::from_utf8),
                   tag!("\"")));
 
 named!(multiline_octal<Vec<u8> >,
-       fold_many0!(chain!(leading_junk ~ space? ~ o: octal_esc, || o),
-                   Vec::new(), |mut a: Vec<_>, b| { a.push(b); a }));
+       many0!(preceded!(leading_junk, octal_esc)));
 
 named!(type_and_value<Value>,
        alt!(preceded!(tag!("MULTILINE_OCTAL"),
@@ -74,18 +72,16 @@ named!(type_and_value<Value>,
 
 named!(pub attribute<Attr>,
        chain!(leading_junk ~
-              space? ~
               key: token ~
-              space? ~
+              space ~
               value: type_and_value,
               || (key, value)));
 
 named!(pub leading_junk<()>,
-       value!((), many0!(endl)));
+       chain!(fold_many0!(endl, (), |(), ()| ()) ~ space?, || ()));
 
 named!(pub begindata<()>,
        chain!(leading_junk ~
-              space? ~
               tag!("BEGINDATA") ~
               endl,
               || ()));

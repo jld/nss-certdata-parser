@@ -1,3 +1,4 @@
+use super::Error;
 use syntax::{Token, Value, Attr, attribute, begindata};
 
 use nom::{slice_to_offsets, Err, IResult};
@@ -11,6 +12,8 @@ pub type Offset = u64;
 
 #[derive(Debug)]
 pub struct ParseError {
+    // TODO: more information would be good.  Like the line number.
+    // (Or at least one or more ErrorKinds.)
     pub byte_offset: Offset,
 }
 
@@ -20,20 +23,6 @@ fn nom_error_loc<'a, E>(err: &'a Err<&'a [u8], E>) -> &'a [u8] {
         Err::Node(_, ref err_box) => nom_error_loc(err_box),
         Err::Position(_, loc) => loc,
         Err::NodePosition(_, _, ref err_box) => nom_error_loc(err_box),
-    }
-}
-
-quick_error! {
-    #[derive(Debug)]
-    pub enum Error {
-        ParseError(err: ParseError) {
-            from()
-            description("parse error")
-        }
-        IOError(err: io::Error) {
-            from()
-            description(err.description())
-        }
     }
 }
 

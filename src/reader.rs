@@ -14,11 +14,11 @@ pub struct ParseError {
     pub byte_offset: Offset,
 }
 
-fn nom_error_loc<'a, E>(err: &'a Err<&'a [u8], E>) -> Option<&'a [u8]> {
+fn nom_error_loc<'a, E>(err: &'a Err<&'a [u8], E>) -> &'a [u8] {
     match *err {
-        Err::Code(_) => None,
+        Err::Code(_) => unimplemented!(),
         Err::Node(_, ref err_box) => nom_error_loc(err_box),
-        Err::Position(_, loc) => Some(loc),
+        Err::Position(_, loc) => loc,
         Err::NodePosition(_, _, ref err_box) => nom_error_loc(err_box),
     }
 }
@@ -37,7 +37,7 @@ quick_error! {
     }
 }
 
-// The code duplication makes me sad, and this *really* need to be properly tested...
+// The code duplication makes me sad, and this ought to be properly tested....
 fn bufferize<I, O, E, F>(mut src: I, mut f: F) -> Result<Option<(usize, O)>, E>
     where I: BufRead,
           E: From<io::Error>,
@@ -47,7 +47,7 @@ fn bufferize<I, O, E, F>(mut src: I, mut f: F) -> Result<Option<(usize, O)>, E>
     // Non-lexical lifetimes would make this code cleaner.
     match {
         let buf = try!(src.fill_buf());
-        if buf.len() == 0 {
+        if buf.is_empty() {
             return Ok(None);
         }
         match try!(f(buf)) {
@@ -67,7 +67,7 @@ fn bufferize<I, O, E, F>(mut src: I, mut f: F) -> Result<Option<(usize, O)>, E>
         let old_len = big_buf.len();
         big_buf.extend_from_slice({
             let buf = try!(src.fill_buf());
-            if buf.len() == 0 {
+            if buf.is_empty() {
                 return Ok(None);
             } 
             buf
@@ -82,6 +82,16 @@ fn bufferize<I, O, E, F>(mut src: I, mut f: F) -> Result<Option<(usize, O)>, E>
     }
 }
 
+// Applies a `nom` parser to a `BufRead`, trying to parse from the
+// input's own buffer if possible, or else allocating a larger
+// temporary buffer if needed.
+//
+// WARNING: this needs a parser where any proper prefix of a valid
+// input is *not* a complete input, and specifically where that
+// results in either Incomplete or an Error with innermost location
+// (see `nom_error_loc`) at the end of the input.  Otherwise there's
+// no way to tell when more input is needed without reading the entire
+// file into memory.
 fn apply_nom<I, O, P>(mut parser: P, off: Offset, src: I)
                    -> Result<Option<(Offset, O)>, Error>
     where I: BufRead,
@@ -94,9 +104,14 @@ fn apply_nom<I, O, P>(mut parser: P, off: Offset, src: I)
                 Ok(Some((used, res)))
             }
             IResult::Error(err) => {
-                let rest = nom_error_loc(&err).expect("expected location for parse error");
-                let (seen, _) = slice_to_offsets(buf, rest);
-                Err(Error::ParseError(ParseError{ byte_offset: off + (seen as Offset) }.into()))
+                let rest = nom_error_loc(&err);
+                if rest.is_empty() {
+                    // Treat an error at the end of the buffer as if Incomplete.
+                    Ok(None)
+                } else {
+                    let (seen, _) = slice_to_offsets(buf, rest);
+                    Err(Error::ParseError(ParseError{ byte_offset: off + (seen as Offset) }.into()))
+                }
             }
             IResult::Incomplete(_) => {
                 Ok(None)

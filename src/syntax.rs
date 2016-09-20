@@ -97,6 +97,22 @@ pub enum Value {
     Binary(Vec<u8>), // Type is always MULTILINE_OCTAL
 }
 
+impl Value {
+    pub fn get_type(&self) -> &str {
+        match *self {
+            Value::Token(ref ttype, _) => ttype,
+            Value::String(_) => "UTF8",
+            Value::Binary(_) => "MULTILINE_OCTAL",
+        }
+    }
+    pub fn into_type(self) -> String {
+        match self {
+            Value::Token(ttype, _) => ttype,
+            _ => self.get_type().to_owned(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{comment, endl, token, quad_digit, octal_digit, hex_digit, octal_esc, hex_esc,

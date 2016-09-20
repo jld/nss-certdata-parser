@@ -175,17 +175,17 @@ impl<I: BufRead> Iterator for AttrIter<I> {
     }
 }
 
-pub type Object = HashMap<Token, Value>;
+pub type RawObject = HashMap<Token, Value>;
 
-pub struct ObjectIter<I: BufRead> {
+pub struct RawObjectIter<I: BufRead> {
     inner: AttrIter<I>,
-    acc: Object,
+    acc: RawObject,
     done: bool,
 }
 
-impl<I: BufRead> ObjectIter<I> {
+impl<I: BufRead> RawObjectIter<I> {
     pub fn new(src: I) -> Self {
-        ObjectIter {
+        RawObjectIter {
             inner: AttrIter::new(src),
             acc: HashMap::new(),
             done: false,
@@ -193,8 +193,8 @@ impl<I: BufRead> ObjectIter<I> {
     }
 }
 
-impl<I: BufRead> Iterator for ObjectIter<I> {
-    type Item = Result<Object, Error>;
+impl<I: BufRead> Iterator for RawObjectIter<I> {
+    type Item = Result<RawObject, Error>;
     fn next(&mut self) -> Option<Self::Item> {
         if self.done {
             return None;

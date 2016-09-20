@@ -4,13 +4,13 @@ use std::fs::File;
 use std::env::args;
 use std::io::BufReader;
 
-use nss_certdata_parser::reader::ObjectIter;
+use nss_certdata_parser::reader::RawObjectIter;
 use nss_certdata_parser::syntax::Value;
 
 fn main() {
     for path in args().skip(1) {
         println!("[");
-        for res_obj in ObjectIter::new(BufReader::new(File::open(path).unwrap())) {
+        for res_obj in RawObjectIter::new(BufReader::new(File::open(path).unwrap())) {
             println!("   {{");
             for (k, v) in res_obj.unwrap() {
                 let vj = match v {

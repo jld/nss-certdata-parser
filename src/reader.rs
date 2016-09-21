@@ -2,7 +2,7 @@ use super::Error;
 use syntax::{Token, Value, Attr, attribute, begindata};
 use structured::Object;
 
-use nom::{slice_to_offsets, Err, IResult};
+use nom::{slice_to_offsets, Err, ErrorKind, IResult};
 use std::collections::HashMap;
 use std::convert::From;
 use std::io;
@@ -16,14 +16,16 @@ pub struct ParseError {
     // TODO: more information would be good.  Like the line number.
     // (Or at least one or more ErrorKinds.)
     pub byte_offset: Offset,
+    pub buf_left: usize,
+    pub what: ErrorKind,
 }
 
-fn nom_error_loc<'a, E>(err: &'a Err<&'a [u8], E>) -> &'a [u8] {
+fn nom_error_info<'a, E: Clone>(err: &'a Err<&'a [u8], E>) -> (&'a [u8], ErrorKind<E>) {
     match *err {
         Err::Code(_) => unimplemented!(),
-        Err::Node(_, ref err_box) => nom_error_loc(err_box),
-        Err::Position(_, loc) => loc,
-        Err::NodePosition(_, _, ref err_box) => nom_error_loc(err_box),
+        Err::Node(_, ref err_box) => nom_error_info(err_box),
+        Err::Position(ref ek, loc) => (loc, ek.clone()),
+        Err::NodePosition(_, _, ref err_box) => nom_error_info(err_box),
     }
 }
 
@@ -76,12 +78,13 @@ fn bufferize<I, O, E, F>(mut src: I, mut f: F) -> Result<Option<(usize, O)>, E>
 // input's own buffer if possible, or else allocating a larger
 // temporary buffer if needed.
 //
-// WARNING: this needs a parser where any proper prefix of a valid
-// input is *not* a complete input, and specifically where that
-// results in either Incomplete or an Error with innermost location
-// (see `nom_error_loc`) at the end of the input.  Otherwise there's
-// no way to tell when more input is needed without reading the entire
-// file into memory.
+// FIXME: this is fundamentally broken; nom expects the entire input,
+// and in some cases an unexpected "end of file" (which in this usage
+// is really just the end of an arbitrary buffer) can cause Error
+// results rather than Incomplete.  Worse, the reported location for
+// that error might *not* be the end of the buffer, depending on how
+// the grammar.  This should be replaced by either reading the entire
+// file into memory or using a handwritten parser.
 fn apply_nom<I, O, P>(mut parser: P, off: Offset, src: I)
                    -> Result<Option<(Offset, O)>, Error>
     where I: BufRead,
@@ -94,13 +97,18 @@ fn apply_nom<I, O, P>(mut parser: P, off: Offset, src: I)
                 Ok(Some((used, res)))
             }
             IResult::Error(err) => {
-                let rest = nom_error_loc(&err);
-                if rest.is_empty() {
-                    // Treat an error at the end of the buffer as if Incomplete.
+                let (rest, what) = nom_error_info(&err);
+                // This is a hack to try to recognize spurious errors.
+                // Might cause false negatives.
+                if !rest.contains(&b'\n') {
                     Ok(None)
                 } else {
                     let (seen, _) = slice_to_offsets(buf, rest);
-                    Err(Error::ParseError(ParseError{ byte_offset: off + (seen as Offset) }.into()))
+                    Err(Error::ParseError(ParseError{
+                        byte_offset: off + (seen as Offset),
+                        buf_left: rest.len(),
+                        what: what,
+                    }.into()))
                 }
             }
             IResult::Incomplete(_) => {

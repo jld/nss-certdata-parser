@@ -8,10 +8,9 @@ pub mod reader;
 pub mod structured;
 pub mod syntax;
 
-pub use embed::{CertData, print_cert};
 pub use reader::{ParseError, ObjectIter};
 pub use structured::{StructureError, TypeError, ValueError,
-                     Object, Certificate, Trust, TrustLevel};
+                     Object, Certificate, Trust, TrustLevel, Usage};
 
 use std::io;
 

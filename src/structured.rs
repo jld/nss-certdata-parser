@@ -1,3 +1,5 @@
+use std::fmt;
+use std::ops::Deref;
 use std::result;
 
 use reader::RawObject;
@@ -9,17 +11,44 @@ pub enum Object {
     Certificate(Certificate),
 }
 
-pub type Blob = Vec<u8>;
+// Type alias as documentation.
 pub type Asn1 = Blob;
+
+// This is basically just to have a custom Debug impl that adds an &.
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Blob(Vec<u8>);
+
+impl Deref for Blob {
+    type Target = Vec<u8>;
+    fn deref(&self) -> &Vec<u8> {
+        &self.0
+    }
+}
+
+impl fmt::Debug for Blob {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        // This ignores the provided "alternate" flag; printing one
+        // `u8` per line for a blob that might be several kB, which is
+        // what `{:#?}` would do here, is not an improvement in human
+        // readability.
+        write!(fmt, "&{:?}", self.0)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Trust {
+    // TODO: factor out these three fields, for list-of-distrusts use cases?
     pub label: String,
     pub issuer: Asn1,
     pub serial: Asn1,
     pub tls_server_trust: TrustLevel,
     pub email_trust: TrustLevel,
     pub code_signing_trust: TrustLevel,
+    // FIXME: should these really be included?  `certdata.txt` seems
+    // to include them only in cases where it already includes the
+    // actual certificate, which doesn't really add any value.
+    // Also, their lengths are known; could be Option<Box<[u8; 16]>> etc.
+    // (But then I'd need an error variant for bad lengths, sigh.)
     pub md5: Option<Blob>,
     pub sha1: Option<Blob>,
 }
@@ -105,10 +134,10 @@ use self::StructureError::MissingKey;
 
 pub type Result<T> = result::Result<T, StructureError>;
 
-fn take_bin(obj: &mut RawObject, key: &'static str) -> Result<Vec<u8>> {
+fn take_bin(obj: &mut RawObject, key: &'static str) -> Result<Blob> {
     match obj.remove(key) {
         None => Err(MissingKey(key)),
-        Some(Value::Binary(val)) => Ok(val),
+        Some(Value::Binary(val)) => Ok(Blob(val)),
         Some(val) => Err(TypeError {
             got: val.into_type(),
             expected: "MULTILINE_OCTAL",

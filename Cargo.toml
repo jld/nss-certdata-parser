@@ -1,6 +1,6 @@
 [package]
 name = "nss-certdata-parser"
-version = "0.4.0"
+version = "0.5.0"
 authors = ["Jed Davis <jld@mozilla.com>"]
 description = "Parser for the certdata.txt file from NSS which holds the Mozilla CA Certificate Store"
 license = "MPL-2.0"

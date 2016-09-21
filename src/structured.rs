@@ -162,7 +162,7 @@ impl Certificate {
 }
 
 fn take_trust_level(obj: &mut RawObject, key: &'static str) -> Result<TrustLevel> {
-    take_tok(obj, key, "CKT_TRUST", TrustLevel::from_str)
+    take_tok(obj, key, "CK_TRUST", TrustLevel::from_str)
 }
 
 impl Trust {

@@ -1,5 +1,6 @@
 use super::Error;
 use syntax::{Token, Value, Attr, attribute, begindata};
+use structured::Object;
 
 use nom::{slice_to_offsets, Err, IResult};
 use std::collections::HashMap;
@@ -213,6 +214,48 @@ impl<I: BufRead> Iterator for RawObjectIter<I> {
                     }
                 }
             }
+        }
+    }
+}
+
+// Does this really belong in this module (vs. structured)?  Does it matter?
+pub struct ObjectIter<I: BufRead> {
+    inner: RawObjectIter<I>,
+}
+
+impl<I: BufRead> From<ObjectIter<I>> for RawObjectIter<I> {
+    fn from(outer: ObjectIter<I>) -> Self {
+        outer.inner
+    }
+}
+impl<I: BufRead> From<RawObjectIter<I>> for ObjectIter<I> {
+    fn from(inner: RawObjectIter<I>) -> Self {
+        ObjectIter { inner: inner }
+    }
+}
+
+impl<I: BufRead> ObjectIter<I> {
+    pub fn new(src: I) -> Self {
+        RawObjectIter::new(src).into()
+    }
+    pub fn into_inner(self) -> RawObjectIter<I> {
+        self.into()
+    }
+}
+
+impl<I: BufRead> Iterator for ObjectIter<I> {
+    type Item = Result<Object, Error>;
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match self.inner.next() {
+                None => return None,
+                Some(Err(err)) => return Some(Err(err)),
+                Some(Ok(obj)) => match Object::from_raw(obj) {
+                    Err(err) => return Some(Err(err.into())),
+                    Ok(Some(obj)) => return Some(Ok(obj)),
+                    Ok(None) => ()
+                }
+            };
         }
     }
 }

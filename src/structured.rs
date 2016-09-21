@@ -1,7 +1,7 @@
 use std::result;
 
-use syntax::Value;
 use reader::RawObject;
+use syntax::Value;
 
 #[derive(Debug, Clone)]
 pub enum Object {
@@ -38,6 +38,23 @@ impl TrustLevel {
             "CKT_NSS_MUST_VERIFY_TRUST" => Some(TrustLevel::MustVerify),
             "CKT_NSS_TRUSTED_DELEGATOR" => Some(TrustLevel::TrustedDelegator),
             _ => None
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Usage {
+    TlsServer,
+    Email,
+    CodeSigning,
+}
+
+impl Trust {
+    pub fn trust_level(&self, usage: Usage) -> TrustLevel {
+        match usage {
+            Usage::TlsServer => self.tls_server_trust,
+            Usage::Email => self.email_trust,
+            Usage::CodeSigning => self.code_signing_trust,
         }
     }
 }

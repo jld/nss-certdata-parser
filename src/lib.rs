@@ -3,12 +3,15 @@ extern crate nom;
 #[macro_use]
 extern crate quick_error;
 
+pub mod embed;
 pub mod reader;
 pub mod structured;
 pub mod syntax;
 
-pub use reader::ParseError;
-pub use structured::{StructureError, TypeError, ValueError, Object, Certificate, Trust};
+pub use embed::{CertData, print_cert};
+pub use reader::{ParseError, ObjectIter};
+pub use structured::{StructureError, TypeError, ValueError,
+                     Object, Certificate, Trust, TrustLevel};
 
 use std::io;
 

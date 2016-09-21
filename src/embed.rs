@@ -11,16 +11,16 @@ pub mod types {
     pub type Blob = [u8];
     pub type Asn1 = Blob;
     pub struct Certificate<'a> {
-        pub value: &'a Asn1,
         pub label: &'a str,
+        pub value: &'a Asn1,
         pub issuer: &'a Asn1,
         pub serial: &'a Asn1,
         pub subject: &'a Asn1,
     }
     pub struct Trust<'a> {
+        pub label: &'a str,
         pub issuer: &'a Asn1,
         pub serial: &'a Asn1,
-        pub label: &'a str,
         pub tls_server_trust: TrustLevel,
         pub email_trust: TrustLevel,
         pub code_signing_trust: TrustLevel,
@@ -34,14 +34,14 @@ pub mod types {
 
 pub fn print_cert<W: Write>(mut out: W, cert: &Certificate) -> io::Result<()> {
     write!(out, concat!("Certificate {{\n",
-                        "    value: &{value:?},\n",
                         "    label: {label:?},\n",
+                        "    value: &{value:?},\n",
                         "    issuer: &{issuer:?}\n",
                         "    serial: &{serial:?}\n",
                         "    subject: &{subject:?}\n",
                         "}}"),
-           value = cert.value,
            label = cert.label,
+           value = cert.value,
            issuer = cert.issuer,
            serial = cert.serial,
            subject = cert.subject)

@@ -61,8 +61,8 @@ impl Trust {
 
 #[derive(Debug, Clone)]
 pub struct Certificate {
-    pub value: Asn1,
     pub label: String,
+    pub value: Asn1,
     pub issuer: Asn1,
     pub serial: Asn1,
     pub subject: Asn1,

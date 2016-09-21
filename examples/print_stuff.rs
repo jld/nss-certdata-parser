@@ -4,8 +4,7 @@ use std::fs::File;
 use std::env::args;
 use std::io::BufReader;
 
-use nss_certdata_parser::{ObjectIter, Usage};
-use nss_certdata_parser::embed::CertData;
+use nss_certdata_parser::{ObjectIter, CertData, Usage};
 
 fn main() {
     for path in args().skip(1) {

@@ -12,7 +12,7 @@ pub mod types {
     pub type Asn1 = Blob;
     pub struct Certificate<'a> {
         pub label: &'a str,
-        pub value: &'a Asn1,
+        pub cert: &'a Asn1,
         pub issuer: &'a Asn1,
         pub serial: &'a Asn1,
         pub subject: &'a Asn1,
@@ -35,13 +35,13 @@ pub mod types {
 pub fn print_cert<W: Write>(mut out: W, cert: &Certificate) -> io::Result<()> {
     write!(out, concat!("Certificate {{\n",
                         "    label: {label:?},\n",
-                        "    value: &{value:?},\n",
+                        "    cert: &{cert:?},\n",
                         "    issuer: &{issuer:?}\n",
                         "    serial: &{serial:?}\n",
                         "    subject: &{subject:?}\n",
                         "}}"),
            label = cert.label,
-           value = cert.value,
+           cert = cert.cert,
            issuer = cert.issuer,
            serial = cert.serial,
            subject = cert.subject)

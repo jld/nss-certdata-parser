@@ -62,7 +62,7 @@ impl Trust {
 #[derive(Debug, Clone)]
 pub struct Certificate {
     pub label: String,
-    pub value: Asn1,
+    pub cert: Asn1,
     pub issuer: Asn1,
     pub serial: Asn1,
     pub subject: Asn1,
@@ -169,7 +169,7 @@ impl Certificate {
             if cert_type == "CKC_X_509" { Some(()) } else { None }
         }));
         Ok(Certificate {
-            value: try!(take_bin(obj, "CKA_VALUE")),
+            cert: try!(take_bin(obj, "CKA_VALUE")),
             label: try!(take_str(obj, "CKA_LABEL")),
             issuer: try!(take_bin(obj, "CKA_ISSUER")),
             serial: try!(take_bin(obj, "CKA_SERIAL_NUMBER")),

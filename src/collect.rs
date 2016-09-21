@@ -12,7 +12,7 @@ fn trust_cmp_with(t: &Trust, issuer: &[u8], serial: &[u8]) -> Ordering {
     (&t.issuer[..], &t.serial[..]).cmp(&(issuer, serial))
 }
 fn trust_cmp(ta: &Trust, tb: &Trust) -> Ordering {
-    trust_cmp_with(ta, &ta.issuer, &tb.serial)
+    trust_cmp_with(ta, &tb.issuer, &tb.serial)
 }
 
 pub struct CertData {

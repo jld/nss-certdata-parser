@@ -10,14 +10,14 @@ named!(comment<()>,
               || ()));
 
 named!(endl<()>,
-       chain!(space? ~
-              comment? ~
+       chain!(complete!(space)? ~
+              complete!(comment)? ~
               char!('\r')? ~
               char!('\n'),
               || ()));
 
 named!(token<Token>,
-       map_res!(recognize!(many1!(alt!(alphanumeric | tag!("_")))),
+       map_res!(recognize!(many1!(alt!(complete!(alphanumeric) | tag!("_")))),
                 |bv: &[_]| String::from_utf8(bv.to_owned())));
 
 named!(hex_digit<u8>,
@@ -54,7 +54,7 @@ named!(multiline_octal<Vec<u8> >,
 
 named!(type_and_value<Value>,
        alt!(preceded!(tag!("MULTILINE_OCTAL"),
-                      error!(ErrorKind::Alt,
+                      return_error!(ErrorKind::Alt,
                              chain!(endl ~
                                     bits: multiline_octal ~
                                     endl ~
@@ -63,7 +63,7 @@ named!(type_and_value<Value>,
                                     || Value::Binary(bits)))) |
             preceded!(tag!("UTF8"),
                       // ASCII7 is also attested but not actually used in certdata.txt
-                      error!(ErrorKind::Alt,
+                      return_error!(ErrorKind::Alt,
                              chain!(space ~
                                     value: quoted_string ~
                                     endl,
@@ -82,7 +82,7 @@ named!(pub attribute<Attr>,
               || (key, value)));
 
 named!(pub leading_junk<()>,
-       chain!(fold_many0!(endl, (), |(), ()| ()) ~ space?, || ()));
+       chain!(fold_many0!(endl, (), |(), ()| ()) ~ complete!(space)?, || ()));
 
 named!(pub begindata<()>,
        chain!(leading_junk ~
